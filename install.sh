@@ -367,6 +367,8 @@ client.disconnect()
     echo "  停止服务: tg-mirror stop"
     echo "  启动服务: tg-mirror start"
     echo "  查看日志: tg-mirror log"
+    echo "  更新版本: tg-mirror update"
+    echo "  卸载: tg-mirror uninstall"
     echo ""
 }
 
@@ -435,6 +437,39 @@ do_log() {
     journalctl -u $SERVICE_NAME -f
 }
 
+do_update() {
+    info "更新 TG Mirror..."
+    # 下载最新管理脚本
+    curl -sL "$SELF_URL" -o /usr/local/bin/tg-mirror
+    chmod +x /usr/local/bin/tg-mirror
+    # 重新生成搬运脚本
+    generate_mirror_script
+    systemctl restart $SERVICE_NAME
+    info "更新完成，服务已重启"
+}
+
+do_uninstall() {
+    echo ""
+    warn "即将卸载 TG Mirror，这将删除所有配置和数据"
+    read -p "确认卸载？(y/N): " confirm
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        info "已取消"
+        return
+    fi
+
+    # 停止并删除服务
+    systemctl stop $SERVICE_NAME 2>/dev/null || true
+    systemctl disable $SERVICE_NAME 2>/dev/null || true
+    rm -f /etc/systemd/system/$SERVICE_NAME.service
+    systemctl daemon-reload
+
+    # 删除文件
+    rm -rf $INSTALL_DIR
+    rm -f /usr/local/bin/tg-mirror
+
+    info "卸载完成"
+}
+
 # ===== 入口 =====
 
 case "${1:-}" in
@@ -473,6 +508,12 @@ case "${1:-}" in
     log|logs)
         do_log
         ;;
+    update|upgrade)
+        do_update
+        ;;
+    uninstall|remove)
+        do_uninstall
+        ;;
     *)
         echo "用法: tg-mirror [命令]"
         echo ""
@@ -485,5 +526,7 @@ case "${1:-}" in
         echo "  stop          停止服务"
         echo "  restart       重启服务"
         echo "  log           查看日志"
+        echo "  update        更新到最新版"
+        echo "  uninstall     卸载"
         ;;
 esac
