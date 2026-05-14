@@ -72,6 +72,9 @@ MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024  # 2GB
 download_queue = asyncio.Queue()
 upload_queue = asyncio.Queue(maxsize=MAX_UPLOAD_QUEUE)
 
+# 上传超时（秒）
+UPLOAD_TIMEOUT = 600  # 10分钟
+
 # 相册缓冲区
 album_buffer = {}
 
@@ -244,21 +247,23 @@ async def upload_worker():
                             h=height or 1080,
                             supports_streaming=True,
                         )]
-                        await client.send_file(
+                        await asyncio.wait_for(client.send_file(
                             TARGET_CHANNEL,
                             file=tmp_path,
                             caption=strip_links(msg.text),
                             thumb=thumb_path,
                             attributes=attributes,
                             force_document=False,
-                        )
+                        ), timeout=UPLOAD_TIMEOUT)
                     else:
-                        await client.send_file(
+                        await asyncio.wait_for(client.send_file(
                             TARGET_CHANNEL,
                             file=tmp_path,
                             caption=strip_links(msg.text),
-                        )
+                        ), timeout=UPLOAD_TIMEOUT)
                     print(f"[搬运成功] msg_id={msg.id}")
+                except asyncio.TimeoutError:
+                    print(f"[搬运超时] msg_id={msg.id} 上传超过{UPLOAD_TIMEOUT}秒，跳过")
                 except Exception as e:
                     print(f"[搬运失败] msg_id={msg.id} error={e}")
                 finally:
@@ -276,26 +281,28 @@ async def upload_worker():
 
                     # 如果全是同一类型，直接一组发
                     if not video_files or not image_files:
-                        await client.send_file(
+                        await asyncio.wait_for(client.send_file(
                             TARGET_CHANNEL,
                             file=tmp_files,
                             caption=strip_links(caption),
-                        )
+                        ), timeout=UPLOAD_TIMEOUT)
                     else:
                         # 混合类型：先发图片组，再发视频组
                         if image_files:
-                            await client.send_file(
+                            await asyncio.wait_for(client.send_file(
                                 TARGET_CHANNEL,
                                 file=image_files,
                                 caption=strip_links(caption),
-                            )
+                            ), timeout=UPLOAD_TIMEOUT)
                         if video_files:
-                            await client.send_file(
+                            await asyncio.wait_for(client.send_file(
                                 TARGET_CHANNEL,
                                 file=video_files,
                                 caption="" if image_files else strip_links(caption),
-                            )
+                            ), timeout=UPLOAD_TIMEOUT)
                     print(f"[搬运成功] album 共{len(tmp_files)}个媒体")
+                except asyncio.TimeoutError:
+                    print(f"[搬运超时] album 上传超过{UPLOAD_TIMEOUT}秒，跳过")
                 except Exception as e:
                     print(f"[搬运失败] album error={e}")
                 finally:
