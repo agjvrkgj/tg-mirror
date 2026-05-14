@@ -32,8 +32,8 @@ SOURCE_CHANNELS = [
 
 TARGET_CHANNEL = 3588551387  # @hdoebz
 
-# 相册收集等待时间（秒）
-ALBUM_WAIT = 3
+# 相册收集等待时间（秒），网络延迟大时可调高
+ALBUM_WAIT = 5
 
 # 下载目录（磁盘）
 DOWNLOAD_DIR = "/root/.openclaw/workspace/tg_mirror_tmp"
@@ -251,12 +251,31 @@ async def upload_worker():
             elif item[0] == "album":
                 _, caption, tmp_files = item
                 try:
-                    await client.send_file(
-                        TARGET_CHANNEL,
-                        file=tmp_files,
-                        caption=strip_links(caption),
-                        supports_streaming=True,
-                    )
+                    # 分组：视频和图片分开发，同类型才能组成 media group
+                    video_files = [f for f in tmp_files if f.lower().endswith(('.mp4', '.mkv', '.avi', '.mov', '.webm'))]
+                    image_files = [f for f in tmp_files if f not in video_files]
+
+                    # 如果全是同一类型，直接一组发
+                    if not video_files or not image_files:
+                        await client.send_file(
+                            TARGET_CHANNEL,
+                            file=tmp_files,
+                            caption=strip_links(caption),
+                        )
+                    else:
+                        # 混合类型：先发图片组，再发视频组
+                        if image_files:
+                            await client.send_file(
+                                TARGET_CHANNEL,
+                                file=image_files,
+                                caption=strip_links(caption),
+                            )
+                        if video_files:
+                            await client.send_file(
+                                TARGET_CHANNEL,
+                                file=video_files,
+                                caption="" if image_files else strip_links(caption),
+                            )
                     print(f"[搬运成功] album 共{len(tmp_files)}个媒体")
                 except Exception as e:
                     print(f"[搬运失败] album error={e}")
