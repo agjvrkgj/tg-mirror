@@ -21,7 +21,7 @@ from telethon.tl.types import DocumentAttributeVideo
 # ===== 配置 =====
 API_ID = os.environ.get("TG_API_ID", "")
 API_HASH = os.environ.get("TG_API_HASH", "")
-SESSION_NAME = "/root/.openclaw/workspace/channel_mirror"
+SESSION_NAME = os.path.join(os.path.dirname(os.path.abspath(__file__)), "channel_mirror")
 
 # 源频道列表（环境变量用逗号分隔，支持数字ID和用户名）
 _default_sources = "2773289819,2135749079,kbjbaX"
