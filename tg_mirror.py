@@ -35,9 +35,18 @@ TARGET_CHANNEL = 3588551387  # @hdoebz
 # 相册收集等待时间（秒），网络延迟大时可调高
 ALBUM_WAIT = 5
 
-# 下载目录（磁盘）
-DOWNLOAD_DIR = "/root/.openclaw/workspace/tg_mirror_tmp"
+# 下载目录（磁盘）—— 使用脚本同目录，确保任何机器都能正确写入
+DOWNLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tg_mirror_tmp")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+# 验证目录可写
+_test_file = os.path.join(DOWNLOAD_DIR, ".write_test")
+try:
+    with open(_test_file, "w") as f:
+        f.write("ok")
+    os.remove(_test_file)
+except Exception as e:
+    print(f"错误：下载目录不可写 {DOWNLOAD_DIR}: {e}")
+    sys.exit(1)
 
 # 文件最大保留时间（秒），超过自动清理
 FILE_MAX_AGE = 7200  # 2小时
