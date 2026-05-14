@@ -65,12 +65,10 @@ client = TelegramClient(SESSION_NAME, int(API_ID), API_HASH)
 client.flood_sleep_threshold = 60
 
 # 流水线队列
-# 上传队列限制为4：达到4个待上传文件后，下载自动暂停
-MAX_UPLOAD_QUEUE = 4
-# 文件大小上限（字节），超过的裁剪视频内容
+# 流水线队列（全部串行排队，按顺序搬运）
 MAX_FILE_SIZE = int(1.5 * 1024 * 1024 * 1024)  # 1.5GB
 download_queue = asyncio.Queue()
-upload_queue = asyncio.Queue(maxsize=MAX_UPLOAD_QUEUE)
+upload_queue = asyncio.Queue()
 
 # 上传超时（秒）
 UPLOAD_TIMEOUT = 600  # 10分钟
