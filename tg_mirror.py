@@ -192,23 +192,11 @@ def get_video_metadata(path):
             fmt = info.get("format", {})
             duration = int(float(fmt.get("duration", 0)))
 
-        # 在视频的 10% 位置截取缩略图，避免开头黑屏/白屏
-        # 最少3秒，最多30秒
-        thumb_time = max(3, min(30, int(duration * 0.1))) if duration > 0 else 3
         subprocess.run(
-            ["ffmpeg", "-y", "-ss", str(thumb_time), "-i", path,
-             "-vframes", "1", "-pix_fmt", "yuvj420p",
-             "-vf", "scale=320:-2", thumb_path],
+            ["ffmpeg", "-y", "-i", path, "-ss", "1", "-vframes", "1",
+             "-vf", "scale=320:-1", thumb_path],
             capture_output=True, timeout=30
         )
-        if not os.path.exists(thumb_path) or os.path.getsize(thumb_path) == 0:
-            # 如果第一次失败，尝试在第0秒截取（兜底）
-            subprocess.run(
-                ["ffmpeg", "-y", "-ss", "0", "-i", path,
-                 "-vframes", "1", "-pix_fmt", "yuvj420p",
-                 "-vf", "scale=320:-2", thumb_path],
-                capture_output=True, timeout=30
-            )
         if not os.path.exists(thumb_path) or os.path.getsize(thumb_path) == 0:
             thumb_path = None
     except Exception:
