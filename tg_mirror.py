@@ -148,25 +148,48 @@ def trim_video_to_size(path, max_size):
 
 def trim_video_start(path, seconds=10):
     """裁掉视频开头指定秒数，原地替换文件。
-    使用两步方式：先定位到最近关键帧，确保裁剪后开头不会花屏/白屏。
+    
+    关键：使用重编码方式裁剪，确保输出视频第一帧是完整的关键帧（I-frame）。
+    如果用 -c copy 裁剪，裁切点不在关键帧上时，视频开头帧无法独立解码，
+    Telegram 会显示白色/灰色封面（因为 TG 从视频第一帧生成预览）。
     """
     trimmed_path = path + ".trimmed.mp4"
     try:
-        # 先用 -ss (input seeking) + -c copy -copyts 快速裁剪
-        # -ss 在 -i 前面会自动 seek 到最近的关键帧
+        # 方案：-ss 放在 -i 前面做 input seeking（快速定位），
+        # 然后对开头几秒重编码确保第一帧是关键帧，后续用 copy 保持质量
+        # 但为了简单可靠，直接对整段重编码前2秒 + 后续 copy 太复杂
+        # 最可靠方案：用 -ss input seeking + 强制输出关键帧在开头
         result = subprocess.run(
             ["ffmpeg", "-y", "-ss", str(seconds), "-i", path,
-             "-c", "copy", "-avoid_negative_ts", "make_zero",
-             "-movflags", "+faststart", trimmed_path],
-            capture_output=True, text=True, timeout=300
+             "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+             "-c:a", "aac", "-b:a", "128k",
+             "-force_key_frames", "expr:eq(t,0)",
+             "-movflags", "+faststart",
+             "-avoid_negative_ts", "make_zero",
+             trimmed_path],
+            capture_output=True, text=True, timeout=600
         )
         if result.returncode == 0 and os.path.exists(trimmed_path) and os.path.getsize(trimmed_path) > 0:
             os.replace(trimmed_path, path)
-            print(f"[裁剪] 已去掉开头 {seconds}s: {os.path.basename(path)}")
+            print(f"[裁剪] 已去掉开头 {seconds}s (重编码): {os.path.basename(path)}")
         else:
-            print(f"[裁剪失败] ffmpeg returncode={result.returncode}")
+            # 重编码失败时回退到 copy 模式（至少能裁剪）
+            print(f"[裁剪] 重编码失败，尝试 copy 模式: returncode={result.returncode}")
             if os.path.exists(trimmed_path):
                 os.remove(trimmed_path)
+            result = subprocess.run(
+                ["ffmpeg", "-y", "-ss", str(seconds), "-i", path,
+                 "-c", "copy", "-avoid_negative_ts", "make_zero",
+                 "-movflags", "+faststart", trimmed_path],
+                capture_output=True, text=True, timeout=300
+            )
+            if result.returncode == 0 and os.path.exists(trimmed_path) and os.path.getsize(trimmed_path) > 0:
+                os.replace(trimmed_path, path)
+                print(f"[裁剪] 已去掉开头 {seconds}s (copy模式): {os.path.basename(path)}")
+            else:
+                print(f"[裁剪失败] copy模式也失败: returncode={result.returncode}")
+                if os.path.exists(trimmed_path):
+                    os.remove(trimmed_path)
     except Exception as e:
         print(f"[裁剪异常] {e}")
         if os.path.exists(trimmed_path):
