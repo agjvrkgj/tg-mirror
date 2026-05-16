@@ -147,11 +147,15 @@ def trim_video_to_size(path, max_size):
 
 
 def trim_video_start(path, seconds=10):
-    """裁掉视频开头指定秒数，原地替换文件"""
+    """裁掉视频开头指定秒数，原地替换文件。
+    使用两步方式：先定位到最近关键帧，确保裁剪后开头不会花屏/白屏。
+    """
     trimmed_path = path + ".trimmed.mp4"
     try:
+        # 先用 -ss (input seeking) + -c copy -copyts 快速裁剪
+        # -ss 在 -i 前面会自动 seek 到最近的关键帧
         result = subprocess.run(
-            ["ffmpeg", "-y", "-i", path, "-ss", str(seconds),
+            ["ffmpeg", "-y", "-ss", str(seconds), "-i", path,
              "-c", "copy", "-avoid_negative_ts", "make_zero",
              "-movflags", "+faststart", trimmed_path],
             capture_output=True, text=True, timeout=300
@@ -192,26 +196,58 @@ def get_video_metadata(path):
             fmt = info.get("format", {})
             duration = int(float(fmt.get("duration", 0)))
 
-        # 在视频的 10% 位置截取缩略图，避免开头黑屏/白屏
-        # 最少3秒，最多30秒
-        thumb_time = max(3, min(30, int(duration * 0.1))) if duration > 0 else 3
-        subprocess.run(
-            ["ffmpeg", "-y", "-ss", str(thumb_time), "-i", path,
-             "-vframes", "1", "-pix_fmt", "yuvj420p",
-             "-vf", "scale=320:-2", thumb_path],
-            capture_output=True, timeout=30
-        )
-        if not os.path.exists(thumb_path) or os.path.getsize(thumb_path) == 0:
-            # 如果第一次失败，尝试在第0秒截取（兜底）
+        # 尝试多个时间点截取缩略图，跳过白屏/黑屏帧
+        # 由于 trim_video_start 使用 -c copy，裁切后开头可能有损坏帧
+        # 所以从视频中后部分取帧更可靠
+        thumb_ok = False
+        candidate_times = []
+        if duration > 0:
+            # 优先从 30%、50%、20%、10% 位置尝试
+            for pct in [0.3, 0.5, 0.2, 0.1]:
+                t = int(duration * pct)
+                if t > 0:
+                    candidate_times.append(t)
+            candidate_times.append(3)
+        else:
+            candidate_times = [5, 3, 1]
+
+        for t in candidate_times:
             subprocess.run(
-                ["ffmpeg", "-y", "-ss", "0", "-i", path,
-                 "-vframes", "1", "-pix_fmt", "yuvj420p",
-                 "-vf", "scale=320:-2", thumb_path],
+                ["ffmpeg", "-y", "-ss", str(t), "-i", path,
+                 "-vframes", "1", "-an",
+                 "-pix_fmt", "yuvj420p",
+                 "-vf", "scale=320:-2",
+                 "-q:v", "2",
+                 thumb_path],
                 capture_output=True, timeout=30
             )
-        if not os.path.exists(thumb_path) or os.path.getsize(thumb_path) == 0:
+            if os.path.exists(thumb_path) and os.path.getsize(thumb_path) > 1000:
+                # 文件大于1KB说明不太可能是纯白/纯黑图片
+                thumb_ok = True
+                break
+            # 小于1KB极有可能是白屏/黑屏，继续尝试下一个时间点
+
+        if not thumb_ok:
+            # 最后兜底：强制解码取第一个有效帧
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", path,
+                 "-vf", "select='gt(scene,0.01)',scale=320:-2",
+                 "-frames:v", "1", "-an",
+                 "-pix_fmt", "yuvj420p",
+                 "-q:v", "2",
+                 thumb_path],
+                capture_output=True, timeout=60
+            )
+            if not os.path.exists(thumb_path) or os.path.getsize(thumb_path) == 0:
+                thumb_path = None
+            else:
+                thumb_ok = True
+
+        if not thumb_ok:
             thumb_path = None
-    except Exception:
+
+    except Exception as e:
+        print(f"[缩略图异常] {e}")
         thumb_path = None
 
     return duration, width, height, thumb_path
